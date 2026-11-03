@@ -1,0 +1,29 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.vault.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.vault.app"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "release.keystore")
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias System.getenv("KEY_ALIAS") ?: "vault"
+            keyPassword System.getenv("KEY_PASSWORD") ?: "android"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+}

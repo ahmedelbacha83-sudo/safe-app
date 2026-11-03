@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<title>Vault - Password Manager</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root { --bg:#0f1117; --card:#1a1d27; --card2:#22263a; --txt:#e8eaf0; --dim:#8b90a3;
+          --acc:#5b7fff; --ok:#2ecc71; --bad:#ff5b6a; }
+  body { background:var(--bg); color:var(--txt); font-family:-apple-system,'Segoe UI',Roboto,sans-serif;
+         min-height:100vh; user-select:none; }
+  .screen { display:none; min-height:100vh; flex-direction:column; animation:fade .25s; }
+  .screen.on { display:flex; }
+  @keyframes fade { from{opacity:0; transform:translateY(6px);} to{opacity:1;} }
+  .pad { padding:20px; }
+  h1 { font-size:24px; } h2 { font-size:20px; }
+  .center { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:14px; text-align:center; }
+  .logoBig { width:84px; height:84px; border-radius:24px; background:linear-gradient(135deg,#5b7fff,#9b5bff);
+             display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:800; color:#fff; }
+  input, select { width:100%; background:var(--card); border:1px solid #2c3044; color:var(--txt);
+                  border-radius:14px; padding:14px 16px; font-size:16px; outline:none; }
+  input:focus { border-color:var(--acc); }
+  .btn { background:var(--acc); color:#fff; border:none; border-radius:14px; padding:14px;
+         font-size:16px; font-weight:600; width:100%; cursor:pointer; }
+  .btn:active { transform:scale(.97); }
+  .btn.ghost { background:var(--card2); color:var(--txt); }
+  .btn.danger { background:#3a1e24; color:var(--bad); }
+  .btn.sm { width:auto; padding:10px 16px; font-size:14px; }
+  .muted { color:var(--dim); font-size:14px; line-height:1.5; }
+  .err { color:var(--bad); font-size:14px; min-height:20px; }
+
+  /* header */
+  .hdr { display:flex; align-items:center; gap:12px; padding:16px 20px; position:sticky; top:0;
+         background:rgba(15,17,23,.92); backdrop-filter:blur(8px); z-index:5; }
+  .hdr .sp { flex:1; }
+  .iconbtn { background:var(--card); border:none; color:var(--txt); width:42px; height:42px; border-radius:12px;
+             font-size:18px; cursor:pointer; }
+
+  /* grid of tiles */
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px 10px; padding:8px 20px 30px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; }
+  .tile:active .bubble { transform:scale(.92); }
+  .bubble { width:64px; height:64px; border-radius:20px; display:flex; align-items:center; justify-content:center;
+            font-size:26px; font-weight:800; color:#fff; box-shadow:0 4px 14px rgba(0,0,0,.4); transition:transform .1s; }
+  .tile span { font-size:12.5px; color:var(--dim); max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* detail */
+  .field { background:var(--card); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .field label { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; }
+  .field .val { font-size:17px; margin:6px 0 10px; word-break:break-all; user-select:text; }
+  .row { display:flex; gap:10px; }
+  .hidden { filter:blur(8px); }
+
+  /* settings rows */
+  .setrow { display:flex; align-items:center; justify-content:space-between; background:var(--card);
+            border-radius:14px; padding:16px; margin-bottom:12px; gap:10px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:50; }
+  .modal.on { display:flex; }
+  .modal .box { background:var(--card); border-radius:20px; padding:22px; width:min(90%,360px); display:flex; flex-direction:column; gap:12px; }
+  .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#2c3044; color:#fff;
+           padding:12px 22px; border-radius:30px; font-size:14px; display:none; z-index:99; }
+  .genrow { display:flex; gap:8px; align-items:center; }
+</style>
+</head>
+<body>
+
+<!-- ============ LOCK ============ -->
+<div class="screen on" id="scr-lock">
+  <div class="center pad">
+    <div class="logoBig">V</div>
+    <h1 id="lockTitle">Create your PIN</h1>
+    <p class="muted" id="lockSub">This PIN encrypts all your passwords.<br>There is no recovery - don't forget it.</p>
+    <input type="password" id="pin" inputmode="numeric" maxlength="6" placeholder="PIN (4-6 digits)">
+    <input type="password" id="pin2" inputmode="numeric" maxlength="6" placeholder="Repeat PIN" style="display:none">
+    <div class="err" id="pinErr"></div>
+    <button class="btn" id="pinBtn">Continue</button>
+  </div>
+</div>
+
+<!-- ============ HOME ============ -->
+<div class="screen" id="scr-home">
+  <div class="hdr">
+    <h2>My Vault</h2>
+    <div class="sp"></div>
+    <button class="iconbtn" onclick="go('settings')">⚙️</button>
+    <button class="iconbtn" onclick="go('add')">＋</button>
+  </div>
+  <div class="pad" style="padding-bottom:0">
+    <input id="search" placeholder="🔍 Search..." oninput="renderGrid()">
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="muted" style="text-align:center;padding:0 30px 40px" id="emptyMsg"></p>
+</div>
+
+<!-- ============ DETAIL ============ -->
+<div class="screen" id="scr-detail">
+  <div class="hdr">
+    <button class="iconbtn" onclick="go('home')">←</button>
+    <h2 id="dName"></h2>
+    <div class="sp"></div>
+    <button class="iconbtn" onclick="editCurrent()">✏️</button>
+    <button class="iconbtn" onclick="delCurrent()">🗑️</button>
+  </div>
+  <div class="pad">
+    <div class="field"><label>Email / Username</label><div class="val" id="dEmail"></div>
+      <div class="row"><button class="btn sm" onclick="copy('email')">📋 Copy</button></div></div>
+    <div class="field"><label>Password</label><div class="val hidden" id="dPass"></div>
+      <div class="row">
+        <button class="btn sm ghost" onclick="togglePass()" id="eyeBtn">👁 Show</button>
+        <button class="btn sm" onclick="copy('pass')">📋 Copy</button>
+      </div></div>
+    <button class="btn ghost" onclick="openSite()">🌐 Open website</button>
+  </div>
+</div>
+
+<!-- ============ ADD / EDIT ============ -->
+<div class="screen" id="scr-add">
+  <div class="hdr">
+    <button class="iconbtn" onclick="go('home')">←</button>
+    <h2 id="addTitle">Add account</h2>
+  </div>
+  <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+    <input id="fName" placeholder="App / Website name (e.g. Facebook)">
+    <input id="fEmail" placeholder="Email or username" autocomplete="off">
+    <div class="genrow">
+      <input id="fPass" placeholder="Password" autocomplete="off">
+      <button class="btn sm ghost" onclick="genPass()">🎲</button>
+    </div>
+    <input id="fUrl" placeholder="Website link (optional, e.g. facebook.com)">
+    <button class="btn" onclick="saveEntry()">Save</button>
+    <div class="err" id="addErr"></div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div class="screen" id="scr-settings">
+  <div class="hdr">
+    <button class="iconbtn" onclick="go('home')">←</button>
+    <h2>Settings</h2>
+  </div>
+  <div class="pad">
+    <div class="setrow"><div><b>Auto-lock</b><br><span class="muted">Lock after inactivity</span></div>
+      <select id="autolock" onchange="saveSettings()" style="width:110px">
+        <option value="1">1 min</option><option value="5" selected>5 min</option>
+        <option value="15">15 min</option><option value="0">Never</option>
+      </select></div>
+    <button class="btn ghost" style="margin-bottom:12px" onclick="exportVault()">⬇️ Export encrypted backup</button>
+    <button class="btn ghost" style="margin-bottom:12px" onclick="document.getElementById('impFile').click()">⬆️ Import backup</button>
+    <input type="file" id="impFile" accept=".json" style="display:none" onchange="importVault(this)">
+    <button class="btn ghost" style="margin-bottom:12px" onclick="askChangePin()">🔑 Change PIN</button>
+    <button class="btn danger" onclick="lock()">🔒 Lock now</button>
+    <p class="muted" style="margin-top:20px">Data is encrypted with AES-256 and stored only on this device.
+    Clearing browser data deletes it - export a backup first.</p>
+  </div>
+</div>
+
+<!-- change PIN modal -->
+<div class="modal" id="pinModal"><div class="box">
+  <h2>Change PIN</h2>
+  <input type="password" id="np1" inputmode="numeric" maxlength="6" placeholder="New PIN">
+  <input type="password" id="np2" inputmode="numeric" maxlength="6" placeholder="Repeat new PIN">
+  <div class="err" id="npErr"></div>
+  <button class="btn" onclick="doChangePin()">Change</button>
+  <button class="btn ghost" onclick="pinModal.classList.remove('on')">Cancel</button>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= crypto ================= */
+const te = new TextEncoder(), td = new TextDecoder();
+const b64 = a => btoa(String.fromCharCode(...new Uint8Array(a)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function deriveKey(pin, salt) {
+  const km = await crypto.subtle.importKey("raw", te.encode(pin), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt, iterations:150000, hash:"SHA-256"},
+                                 km, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+}
+async function encVault(entries, pin) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const key  = await deriveKey(pin, salt);
+  const ct   = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, te.encode(JSON.stringify(entries)));
+  return { v:1, salt:b64(salt), iv:b64(iv), data:b64(ct) };
+}
+async function decVault(blob, pin) {
+  const key = await deriveKey(pin, unb64(blob.salt));
+  const pt  = await crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(blob.iv)}, key, unb64(blob.data));
+  return JSON.parse(td.decode(pt));
+}
+
+/* ================= state ================= */
+let PIN = null, entries = [], currentId = null, editId = null, lockTimer = null;
+const store = {
+  get blob()  { return localStorage.getItem("vault_blob"); },
+  set blob(v) { localStorage.setItem("vault_blob", v); },
+  get set()    { return JSON.parse(localStorage.getItem("vault_set") || "{}"); },
+  set set(v)   { localStorage.setItem("vault_set", JSON.stringify(v)); }
+};
+
+function go(name){
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("on"));
+  document.getElementById("scr-" + name).classList.add("on");
+  if (name === "home") renderGrid();
+  if (name === "add") { addTitle.textContent = editId ? "Edit account" : "Add account"; }
+}
+function toastMsg(m){ const t=document.getElementById("toast"); t.textContent=m; t.style.display="block";
+  clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",1600); }
+
+/* ================= lock screen ================= */
+function setupLock(){
+  const first = !store.blob;
+  lockTitle.textContent = first ? "Create your PIN" : "Enter your PIN";
+  lockSub.innerHTML = first ? "This PIN encrypts all your passwords.<br>There is no recovery - don't forget it."
+                            : "Your vault is locked.";
+  pin2.style.display = first ? "block" : "none";
+  pinBtn.textContent = first ? "Create vault" : "Unlock";
+  pin.value = pin2.value = pinErr.textContent = "";
+}
+pinBtn.onclick = async () => {
+  const p = pin.value, first = !store.blob;
+  if (!/^\d{4,6}$/.test(p)) return pinErr.textContent = "PIN must be 4-6 digits.";
+  if (first) {
+    if (p !== pin2.value) return pinErr.textContent = "PINs don't match.";
+    entries = [];
+    store.blob = JSON.stringify(await encVault(entries, p));
+    store.set = { autolock: 5 };
+    finishUnlock(p);
+  } else {
+    try { entries = await decVault(JSON.parse(store.blob), p); finishUnlock(p); }
+    catch { pinErr.textContent = "Wrong PIN."; }
+  }
+};
+function finishUnlock(p){
+  PIN = p;
+  autolock.value = store.set.autolock ?? 5;
+  go("home");
+  resetTimer();
+}
+function lock(){
+  PIN = null; entries = []; currentId = null;
+  setupLock(); go("lock");
+}
+function resetTimer(){
+  clearTimeout(lockTimer);
+  const mins = +(store.set.autolock ?? 5);
+  if (mins > 0 && PIN) lockTimer = setTimeout(lock, mins * 60000);
+}
+["click","touchstart","keydown"].forEach(e => addEventListener(e, resetTimer, {passive:true}));
+
+/* ================= grid ================= */
+const BRANDS = {
+  facebook:["#1877F2","f"], instagram:["#E1306C","◎"], google:["#4285F4","G"], gmail:["#EA4335","M"],
+  youtube:["#FF0000","▶"], x:["#000000","𝕏"], twitter:["#000000","𝕏"], whatsapp:["#25D366","✆"],
+  telegram:["#0088CC","✈"], snapchat:["#E7E300","👻"], tiktok:["#000000","♪"], linkedin:["#0A66C2","in"],
+  discord:["#5865F2","⌂"], reddit:["#FF4500","r"], pinterest:["#E60023","P"], netflix:["#E50914","N"],
+  spotify:["#1DB954","♬"], amazon:["#FF9900","a"], apple:["#555555",""], microsoft:["#00A4EF","⊞"],
+  paypal:["#003087","P"], binance:["#F0B90B","◆"], coinbase:["#0052FF","C"], steam:["#171a21","◎"],
+  github:["#333333","⚡"], outlook:["#0078D4","O"], yahoo:["#6001D2","Y!"], twitch:["#9146FF","◆"],
+  epic:["#333333","Epic"], roblox:["#E11","R"], playstation:["#0070D1","PS"], xbox:["#107C10","X"]
+};
+function tileStyle(name){
+  const n = name.toLowerCase();
+  for (const k in BRANDS) if (n.includes(k)) return BRANDS[k];
+  return ["#5b7fff", name.trim()[0].toUpperCase()];
+}
+function renderGrid(){
+  const q = search.value.toLowerCase();
+  const list = entries.filter(e => e.name.toLowerCase().includes(q));
+  grid.innerHTML = list.map(e => {
+    const [bg, ch] = tileStyle(e.name);
+    return `<div class="tile" onclick="openDetail('${e.id}')">
+      <div class="bubble" style="background:${bg}">${ch}</div><span>${esc(e.name)}</span></div>`;
+  }).join("");
+  emptyMsg.textContent = entries.length ? "" :
+    "No accounts yet. Tap ＋ to add your first one (e.g. Facebook).";
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ================= detail ================= */
+function openDetail(id){
+  currentId = id;
+  const e = entries.find(x => x.id === id); if (!e) return;
+  dName.textContent = e.name;
+  dEmail.textContent = e.email || "-";
+  dPass.textContent = e.pass || "-";
+  dPass.classList.add("hidden"); eyeBtn.textContent = "👁 Show";
+  go("detail");
+}
+function togglePass(){
+  dPass.classList.toggle("hidden");
+  eyeBtn.textContent = dPass.classList.contains("hidden") ? "👁 Show" : "🙈 Hide";
+}
+async function copy(what){
+  const e = entries.find(x => x.id === currentId);
+  const txt = what === "email" ? e.email : e.pass;
+  try { await navigator.clipboard.writeText(txt); }
+  catch { const ta = document.createElement("textarea"); ta.value = txt;
+          document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+  toastMsg("Copied ✓");
+}
+function openSite(){
+  const e = entries.find(x => x.id === currentId);
+  if (e.url) location.href = e.url.startsWith("http") ? e.url : "https://" + e.url;
+  else toastMsg("No link saved");
+}
+function editCurrent(){
+  editId = currentId;
+  const e = entries.find(x => x.id === currentId);
+  fName.value = e.name; fEmail.value = e.email; fPass.value = e.pass; fUrl.value = e.url || "";
+  addErr.textContent = ""; go("add");
+}
+async function delCurrent(){
+  if (!confirm("Delete this account?")) return;
+  entries = entries.filter(x => x.id !== currentId);
+  await persist(); toastMsg("Deleted"); go("home");
+}
+
+/* ================= add / edit ================= */
+function genPass(){
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+  const a = crypto.getRandomValues(new Uint8Array(16));
+  fPass.value = [...a].map(b => chars[b % chars.length]).join("");
+}
+async function saveEntry(){
+  const name = fName.value.trim();
+  if (!name) return addErr.textContent = "Name is required.";
+  if (editId) {
+    const e = entries.find(x => x.id === editId);
+    Object.assign(e, { name, email:fEmail.value.trim(), pass:fPass.value, url:fUrl.value.trim() });
+    editId = null;
+  } else {
+    entries.push({ id: Date.now().toString(36), name, email:fEmail.value.trim(),
+                   pass:fPass.value, url:fUrl.value.trim() });
+  }
+  await persist();
+  fName.value = fEmail.value = fPass.value = fUrl.value = "";
+  addErr.textContent = "";
+  toastMsg("Saved ✓"); go("home");
+}
+async function persist(){ store.blob = JSON.stringify(await encVault(entries, PIN)); }
+
+/* ================= settings ================= */
+function saveSettings(){ store.set = { autolock: +autolock.value }; resetTimer(); }
+async function exportVault(){
+  const blob = new Blob([store.blob], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "vault-backup-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click();
+  toastMsg("Backup downloaded");
+}
+function importVault(inp){
+  const f = inp.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = async () => {
+    try {
+      const blob = JSON.parse(r.result);
+      entries = await decVault(blob, PIN);       // verifies PIN matches backup
+      store.blob = r.result;
+      toastMsg("Backup restored ✓"); renderGrid();
+    } catch { toastMsg("Wrong PIN or bad file"); }
+  };
+  r.readAsText(f); inp.value = "";
+}
+function askChangePin(){ np1.value = np2.value = npErr.textContent = ""; pinModal.classList.add("on"); }
+async function doChangePin(){
+  const p = np1.value;
+  if (!/^\d{4,6}$/.test(p)) return npErr.textContent = "PIN must be 4-6 digits.";
+  if (p !== np2.value) return npErr.textContent = "PINs don't match.";
+  PIN = p; await persist();
+  pinModal.classList.remove("on"); toastMsg("PIN changed ✓");
+}
+
+setupLock();
+</script>
+</body>
+</html>
